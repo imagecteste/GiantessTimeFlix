@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-editorial-red: #E50914;
+  --color-editorial-bg: #0F0F0F;
+}
+
+body {
+  @apply bg-editorial-bg text-white font-sans overflow-x-hidden;
+}
+
+/* Specific editorial typography utilities */
+.editorial-title {
+  @apply font-black italic tracking-tighter;
+}
+
+.editorial-label {
+  @apply uppercase tracking-[0.2em] font-black;
+}
+
+/* Custom Scrollbar for Rows */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
