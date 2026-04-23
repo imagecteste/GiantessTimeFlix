@@ -2,7 +2,9 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AuthSession } from '../types';
-import subscribeImage from '../../subscribe.png';
+
+const subscribeImageUrl =
+  'https://drive.google.com/uc?export=view&id=1V9Yo3ZmJkSFbnbztgolZ7N6ryKLCTxbY';
 
 interface AccessRequiredModalProps {
   isOpen: boolean;
@@ -63,7 +65,7 @@ export default function AccessRequiredModal({
             <div className="px-5 md:px-6 py-6 md:py-7 space-y-5">
               <div className="rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
                 <img
-                  src={subscribeImage}
+                  src={subscribeImageUrl}
                   alt="Subscribe on Patreon"
                   className="w-full h-64 md:h-72 object-cover"
                 />
