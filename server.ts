@@ -2,7 +2,6 @@ import assert from 'node:assert';
 import crypto from 'node:crypto';
 import {existsSync} from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
 import express, {type NextFunction, type Request, type Response} from 'express';
 import dotenv from 'dotenv';
 
@@ -1061,10 +1060,11 @@ app.get('/api/series', async (request: Request, response: Response) => {
   }
 });
 
-const executedFilePath = process.argv[1] ? path.resolve(process.argv[1]) : null;
-const currentFilePath = fileURLToPath(import.meta.url);
+const isRunningInServerlessEnvironment = Boolean(
+  process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT,
+);
 
-if (executedFilePath === currentFilePath) {
+if (!isRunningInServerlessEnvironment) {
   app.listen(serverPort, () => {
     console.log(`Bunny proxy listening on http://localhost:${serverPort}`);
   });
