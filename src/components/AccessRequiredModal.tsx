@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { AuthSession } from '../types';
 
 const subscribeImageUrl =
-  'https://drive.google.com/uc?export=view&id=1V9Yo3ZmJkSFbnbztgolZ7N6ryKLCTxbY';
+  'https://drive.google.com/thumbnail?id=1V9Yo3ZmJkSFbnbztgolZ7N6ryKLCTxbY&sz=w2000';
 
 interface AccessRequiredModalProps {
   isOpen: boolean;
@@ -67,6 +67,7 @@ export default function AccessRequiredModal({
                 <img
                   src={subscribeImageUrl}
                   alt="Subscribe on Patreon"
+                  referrerPolicy="no-referrer"
                   className="w-full h-64 md:h-72 object-cover"
                 />
               </div>
