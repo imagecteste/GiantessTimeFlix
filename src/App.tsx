@@ -369,13 +369,26 @@ export default function App() {
             <h2 className="text-3xl md:text-5xl font-black mb-8 uppercase tracking-tighter italic">
               Library <span className="text-editorial-red">Trailers</span>
             </h2>
-            <MovieRow
-              title="Trailer Collections"
-              items={recentlyUpdatedTrailers}
-              onSelectItem={handleSelectRowItem}
-              onPlayItem={handlePlayRowItem}
-            />
-            {trailers.length === 0 && (
+            {trailers.length > 0 ? (
+              <div className="space-y-6 sm:space-y-8">
+                <MovieRow
+                  title="Trailer Collections"
+                  items={recentlyUpdatedTrailers}
+                  onSelectItem={handleSelectRowItem}
+                  onPlayItem={handlePlayRowItem}
+                />
+                {trailers.map((collection) => (
+                  <div key={collection.id}>
+                    <MovieRow
+                      title={collection.title}
+                      items={collection.episodes}
+                      onSelectItem={handleSelectRowItem}
+                      onPlayItem={handlePlayRowItem}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
               <p className="text-gray-500 text-center py-20">No trailer collections available yet.</p>
             )}
           </div>
@@ -386,12 +399,28 @@ export default function App() {
             <h2 className="text-3xl md:text-5xl font-black mb-8 uppercase tracking-tighter italic">
               Library <span className="text-editorial-red">Series</span>
             </h2>
-            <MovieRow
-              title="All Collections"
-              items={series}
-              onSelectItem={handleSelectRowItem}
-              onPlayItem={handlePlayRowItem}
-            />
+            {series.length > 0 ? (
+              <div className="space-y-6 sm:space-y-8">
+                <MovieRow
+                  title="All Collections"
+                  items={series}
+                  onSelectItem={handleSelectRowItem}
+                  onPlayItem={handlePlayRowItem}
+                />
+                {series.map((collection) => (
+                  <div key={collection.id}>
+                    <MovieRow
+                      title={collection.title}
+                      items={collection.episodes}
+                      onSelectItem={handleSelectRowItem}
+                      onPlayItem={handlePlayRowItem}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-center py-20">No series collections available yet.</p>
+            )}
           </div>
         );
       case 'movies':
@@ -401,7 +430,7 @@ export default function App() {
               Recently Updated <span className="text-editorial-red">Series</span>
             </h2>
             <MovieRow
-              title="Fresh from Bunny"
+              title="Fresh from Giantess Time"
               items={recentlyUpdatedSeries}
               onSelectItem={handleSelectRowItem}
               onPlayItem={handlePlayRowItem}
