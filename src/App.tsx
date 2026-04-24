@@ -13,12 +13,155 @@ import { motion, AnimatePresence } from 'motion/react';
 const MAX_HOME_SERIES = 12;
 const MAX_HOME_EPISODES = 12;
 const RANDOM_HOME_COLLECTION_COUNT = 3;
+const DAILY_SOFT_LIMIT_BYTES = 1024 * 1024 * 1024;
+const FALLBACK_STREAM_BYTES_PER_SECOND = 250_000;
+const DAILY_USAGE_STORAGE_PREFIX = 'gtf-daily-usage';
+const DAILY_USAGE_COOKIE_PREFIX = 'gtf_daily_usage';
+const DAILY_USAGE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
 
 const EMPTY_AUTH_SESSION: AuthSession = {
   hasFullAccess: false,
   isAuthenticated: false,
   user: null,
 };
+
+type AccessModalReason = 'premium-access' | 'daily-quota-exhausted';
+
+interface DailyUsageSnapshot {
+  date: string;
+  bytesUsed: number;
+}
+
+function getDailyUsageDateKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function getDailyUsageIdentity(authSession: AuthSession): string {
+  return authSession.user?.patreonUserId ? `free-${authSession.user.patreonUserId}` : 'anonymous';
+}
+
+function getDailyUsageStorageKey(identity: string): string {
+  return `${DAILY_USAGE_STORAGE_PREFIX}:${identity}`;
+}
+
+function getDailyUsageCookieName(identity: string): string {
+  return `${DAILY_USAGE_COOKIE_PREFIX}_${identity.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+function parseDailyUsageSnapshot(rawValue: string | null): DailyUsageSnapshot | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsedValue = JSON.parse(rawValue) as {
+      bytesUsed?: unknown;
+      date?: unknown;
+    };
+    if (
+      typeof parsedValue.date !== 'string' ||
+      typeof parsedValue.bytesUsed !== 'number' ||
+      !Number.isFinite(parsedValue.bytesUsed) ||
+      parsedValue.bytesUsed < 0
+    ) {
+      return null;
+    }
+
+    return {
+      date: parsedValue.date,
+      bytesUsed: parsedValue.bytesUsed,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readCookieValue(cookieName: string): string | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  const matchingCookie = document.cookie
+    .split('; ')
+    .find((cookiePart) => cookiePart.startsWith(`${cookieName}=`));
+
+  if (!matchingCookie) {
+    return null;
+  }
+
+  return decodeURIComponent(matchingCookie.split('=').slice(1).join('='));
+}
+
+function writeCookieValue(cookieName: string, cookieValue: string, maxAgeSeconds: number): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  document.cookie = `${cookieName}=${encodeURIComponent(cookieValue)}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax`;
+}
+
+function persistDailyUsageSnapshot(identity: string, snapshot: DailyUsageSnapshot): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const normalizedSnapshot: DailyUsageSnapshot = {
+    date: snapshot.date,
+    bytesUsed: Math.max(0, Math.round(snapshot.bytesUsed)),
+  };
+  const serializedSnapshot = JSON.stringify(normalizedSnapshot);
+
+  window.localStorage.setItem(getDailyUsageStorageKey(identity), serializedSnapshot);
+  writeCookieValue(
+    getDailyUsageCookieName(identity),
+    serializedSnapshot,
+    DAILY_USAGE_COOKIE_MAX_AGE_SECONDS,
+  );
+}
+
+function readDailyUsageSnapshot(identity: string): DailyUsageSnapshot {
+  const todayKey = getDailyUsageDateKey();
+
+  if (typeof window === 'undefined') {
+    return {
+      date: todayKey,
+      bytesUsed: 0,
+    };
+  }
+
+  const storedSnapshot =
+    parseDailyUsageSnapshot(window.localStorage.getItem(getDailyUsageStorageKey(identity))) ??
+    parseDailyUsageSnapshot(readCookieValue(getDailyUsageCookieName(identity)));
+
+  if (!storedSnapshot || storedSnapshot.date !== todayKey) {
+    const resetSnapshot: DailyUsageSnapshot = {
+      date: todayKey,
+      bytesUsed: 0,
+    };
+    persistDailyUsageSnapshot(identity, resetSnapshot);
+    return resetSnapshot;
+  }
+
+  return storedSnapshot;
+}
+
+function calculatePlaybackUsageBytes(episode: Episode, watchedMilliseconds: number): number {
+  if (watchedMilliseconds <= 0) {
+    return 0;
+  }
+
+  if (
+    typeof episode.fileSizeBytes === 'number' &&
+    Number.isFinite(episode.fileSizeBytes) &&
+    episode.fileSizeBytes > 0 &&
+    episode.durationInSeconds > 0
+  ) {
+    const watchedFraction = watchedMilliseconds / (episode.durationInSeconds * 1000);
+    return Math.max(0, Math.round(episode.fileSizeBytes * watchedFraction));
+  }
+
+  return Math.max(0, Math.round((watchedMilliseconds / 1000) * FALLBACK_STREAM_BYTES_PER_SECOND));
+}
 
 async function fetchCatalog(): Promise<CatalogResponse> {
   const response = await fetch(buildApiUrl('/api/series'), {
@@ -149,6 +292,8 @@ export default function App() {
   const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
   const [selectedEpisode, setSelectedEpisode] = useState<Episode | null>(null);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [accessModalReason, setAccessModalReason] = useState<AccessModalReason>('premium-access');
+  const [dailyUsageBytesUsed, setDailyUsageBytesUsed] = useState(0);
   const catalogSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -191,7 +336,15 @@ export default function App() {
   const trailers = catalogResponse?.trailers ?? [];
   const trailerCollectionIds = useMemo(() => new Set(trailers.map((collection) => collection.id)), [trailers]);
   const hasFullAccess = authSession.hasFullAccess;
+  const dailyUsageIdentity = useMemo(() => getDailyUsageIdentity(authSession), [authSession.user?.patreonUserId]);
   const allCollections = useMemo(() => [...series, ...trailers], [series, trailers]);
+  const hasReachedDailySoftLimit = !hasFullAccess && dailyUsageBytesUsed >= DAILY_SOFT_LIMIT_BYTES;
+
+  useEffect(() => {
+    const nextDailyUsageSnapshot = readDailyUsageSnapshot(dailyUsageIdentity);
+    setDailyUsageBytesUsed(nextDailyUsageSnapshot.bytesUsed);
+  }, [dailyUsageIdentity]);
+
   const featuredSeries = useMemo(() => {
     const catalogSeries = series.length > 0 ? series : trailers;
     if (catalogSeries.length === 0) {
@@ -255,8 +408,36 @@ export default function App() {
     setCatalogResponse(nextCatalogResponse);
   };
 
-  const openAccessModal = () => {
+  const openAccessModal = (reason: AccessModalReason = 'premium-access') => {
+    setAccessModalReason(reason);
     setIsAccessModalOpen(true);
+  };
+
+  const recordPlaybackUsage = (episode: Episode, watchedMilliseconds: number) => {
+    if (hasFullAccess || watchedMilliseconds <= 0) {
+      return;
+    }
+
+    const playbackUsageBytes = calculatePlaybackUsageBytes(episode, watchedMilliseconds);
+    if (playbackUsageBytes <= 0) {
+      return;
+    }
+
+    let nextBytesUsed = 0;
+    setDailyUsageBytesUsed((previousBytesUsed) => {
+      nextBytesUsed = previousBytesUsed + playbackUsageBytes;
+      persistDailyUsageSnapshot(dailyUsageIdentity, {
+        date: getDailyUsageDateKey(),
+        bytesUsed: nextBytesUsed,
+      });
+      return nextBytesUsed;
+    });
+
+    if (nextBytesUsed >= DAILY_SOFT_LIMIT_BYTES) {
+      setSelectedEpisode(null);
+      setAccessModalReason('daily-quota-exhausted');
+      setIsAccessModalOpen(true);
+    }
   };
 
   const canAccessItem = (item: Series | Episode): boolean =>
@@ -269,7 +450,12 @@ export default function App() {
 
   const openEpisodePlayer = (episode: Episode) => {
     if (!canAccessItem(episode)) {
-      openAccessModal();
+      openAccessModal('premium-access');
+      return;
+    }
+
+    if (hasReachedDailySoftLimit) {
+      openAccessModal('daily-quota-exhausted');
       return;
     }
 
@@ -486,11 +672,13 @@ export default function App() {
         episode={selectedEpisode}
         isOpen={selectedEpisode !== null}
         nextEpisode={nextEpisode}
+        onPlaybackUsageTracked={recordPlaybackUsage}
         onWatchNext={(episode) => setSelectedEpisode(episode)}
         onClose={() => setSelectedEpisode(null)}
       />
       <AccessRequiredModal
         isOpen={isAccessModalOpen}
+        reason={accessModalReason}
         authSession={authSession}
         onClose={() => setIsAccessModalOpen(false)}
         onLogin={openPatreonLogin}

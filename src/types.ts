@@ -23,6 +23,7 @@ export interface Episode {
   playbackUrl: string;
   publishedAt: string;
   durationInSeconds: number;
+  fileSizeBytes?: number;
   requiresLegacyWarning: boolean;
 }
 

@@ -8,6 +8,7 @@ const subscribeImageUrl =
 
 interface AccessRequiredModalProps {
   isOpen: boolean;
+  reason: 'premium-access' | 'daily-quota-exhausted';
   authSession: AuthSession;
   onClose: () => void;
   onLogin: () => void;
@@ -16,14 +17,29 @@ interface AccessRequiredModalProps {
 
 export default function AccessRequiredModal({
   isOpen,
+  reason,
   authSession,
   onClose,
   onLogin,
   onWatchFreeContent,
 }: AccessRequiredModalProps) {
-  const primaryActionLabel = authSession.isAuthenticated
+  const isDailyQuotaExhausted = reason === 'daily-quota-exhausted';
+  const primaryActionLabel = isDailyQuotaExhausted
     ? 'Become a Member'
-    : 'Log In with Patreon';
+    : authSession.isAuthenticated
+      ? 'Become a Member'
+      : 'Log In with Patreon';
+  const title = isDailyQuotaExhausted ? 'Daily Free Limit Reached' : 'Unlock Full Access';
+  const description = isDailyQuotaExhausted
+    ? 'You have used the daily 1 GB viewing quota available for free access. Become a Patreon member to continue watching today.'
+    : `Full series access is reserved for Patreon members subscribed to the Fugitive Tiny plan or above on GiantessTime. ${
+        authSession.isAuthenticated
+          ? 'Upgrade your pledge to unlock the full library.'
+          : 'Log in with Patreon to verify your membership or upgrade your pledge to unlock the full library.'
+      }`;
+  const authenticatedHint = isDailyQuotaExhausted
+    ? 'If you already upgraded today, log out and log back in so we can refresh your membership access.'
+    : 'If you just subscribed, please log out and log back in so we can refresh your membership access.';
 
   return (
     <AnimatePresence>
@@ -46,10 +62,10 @@ export default function AccessRequiredModal({
             <div className="flex items-start justify-between gap-4 px-5 md:px-6 py-5 border-b border-white/10">
               <div className="space-y-2">
                 <p className="text-[10px] md:text-xs font-black tracking-[0.3em] uppercase text-editorial-red">
-                  Members Only
+                  {isDailyQuotaExhausted ? 'Daily Quota Reached' : 'Members Only'}
                 </p>
                 <h2 className="text-2xl md:text-3xl font-black uppercase tracking-tight italic">
-                  Unlock Full Access
+                  {title}
                 </h2>
               </div>
               <button
@@ -72,28 +88,40 @@ export default function AccessRequiredModal({
                 />
               </div>
               <p className="text-sm md:text-base text-gray-300 leading-relaxed">
-                Full series access is reserved for Patreon members subscribed to the{' '}
-                <span className="font-bold text-white">Fugitive Tiny plan or above</span> on
-                GiantessTime.{' '}
-                {authSession.isAuthenticated
-                  ? 'Upgrade your pledge to unlock the full library.'
-                  : 'Log in with Patreon to verify your membership or upgrade your pledge to unlock the full library.'}
+                {!isDailyQuotaExhausted && (
+                  <>
+                    Full series access is reserved for Patreon members subscribed to the{' '}
+                    <span className="font-bold text-white">Fugitive Tiny plan or above</span> on
+                    GiantessTime.{' '}
+                  </>
+                )}
+                {isDailyQuotaExhausted ? (
+                  <>
+                    You have used the daily <span className="font-bold text-white">1 GB viewing quota</span>{' '}
+                    available for free access. Become a Patreon member to continue watching today.
+                  </>
+                ) : (
+                  authSession.isAuthenticated
+                    ? 'Upgrade your pledge to unlock the full library.'
+                    : 'Log in with Patreon to verify your membership or upgrade your pledge to unlock the full library.'
+                )}
               </p>
               {authSession.isAuthenticated ? (
                 <p className="text-xs md:text-sm text-gray-400 leading-relaxed">
-                  If you just subscribed, please log out and log back in so we can refresh your
-                  membership access.
+                  {authenticatedHint}
                 </p>
               ) : null}
               <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={onWatchFreeContent}
-                  className="inline-flex items-center justify-center bg-white/10 text-white px-6 py-3 rounded font-bold hover:bg-white/15 transition-all border border-white/10 text-sm sm:text-base"
-                >
-                  Watch Free Content
-                </button>
-                {authSession.isAuthenticated ? (
+                {!isDailyQuotaExhausted && (
+                  <button
+                    type="button"
+                    onClick={onWatchFreeContent}
+                    className="inline-flex items-center justify-center bg-white/10 text-white px-6 py-3 rounded font-bold hover:bg-white/15 transition-all border border-white/10 text-sm sm:text-base"
+                  >
+                    Watch Free Content
+                  </button>
+                )}
+                {authSession.isAuthenticated || isDailyQuotaExhausted ? (
                   <a
                     href="https://www.patreon.com/cw/GiantessTime/membership"
                     target="_blank"

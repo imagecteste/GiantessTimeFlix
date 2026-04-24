@@ -8,6 +8,7 @@ interface VideoPlayerModalProps {
   episode: Episode | null;
   isOpen: boolean;
   nextEpisode: Episode | null;
+  onPlaybackUsageTracked: (episode: Episode, watchedMilliseconds: number) => void;
   onWatchNext: (episode: Episode) => void;
   onClose: () => void;
 }
@@ -35,12 +36,28 @@ export default function VideoPlayerModal({
   episode,
   isOpen,
   nextEpisode,
+  onPlaybackUsageTracked,
   onWatchNext,
   onClose,
 }: VideoPlayerModalProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const playbackStartedAtRef = useRef<number | null>(null);
   const [hasAcknowledgedLegacyWarning, setHasAcknowledgedLegacyWarning] = useState(false);
   const [hasPlaybackEnded, setHasPlaybackEnded] = useState(false);
+  const [isPlaybackActive, setIsPlaybackActive] = useState(false);
+
+  const reportPlaybackUsage = (shouldResetPlaybackStart: boolean) => {
+    if (playbackStartedAtRef.current === null || !episode) {
+      return;
+    }
+
+    const watchedMilliseconds = Date.now() - playbackStartedAtRef.current;
+    if (watchedMilliseconds > 0) {
+      onPlaybackUsageTracked(episode, watchedMilliseconds);
+    }
+
+    playbackStartedAtRef.current = shouldResetPlaybackStart ? null : Date.now();
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -66,10 +83,26 @@ export default function VideoPlayerModal({
   useEffect(() => {
     setHasAcknowledgedLegacyWarning(false);
     setHasPlaybackEnded(false);
+    setIsPlaybackActive(false);
+    playbackStartedAtRef.current = null;
   }, [episode?.id, isOpen]);
 
   const shouldShowLegacyWarning =
     Boolean(episode?.requiresLegacyWarning) && !hasAcknowledgedLegacyWarning;
+
+  useEffect(() => {
+    if (!isPlaybackActive) {
+      return undefined;
+    }
+
+    const usageIntervalId = window.setInterval(() => {
+      reportPlaybackUsage(false);
+    }, 15_000);
+
+    return () => {
+      window.clearInterval(usageIntervalId);
+    };
+  }, [isPlaybackActive, onPlaybackUsageTracked]);
 
   useEffect(() => {
     if (!isOpen || !episode || shouldShowLegacyWarning || !iframeRef.current) {
@@ -79,20 +112,34 @@ export default function VideoPlayerModal({
     const player = new playerjs.Player(iframeRef.current);
     const handleEnded = async () => {
       await exitFullscreenIfActive();
+      reportPlaybackUsage(true);
+      setIsPlaybackActive(false);
       setHasPlaybackEnded(true);
     };
     const handlePlay = () => {
+      if (playbackStartedAtRef.current === null) {
+        playbackStartedAtRef.current = Date.now();
+      }
+      setIsPlaybackActive(true);
       setHasPlaybackEnded(false);
+    };
+    const handlePause = () => {
+      reportPlaybackUsage(true);
+      setIsPlaybackActive(false);
     };
 
     player.on('ended', handleEnded);
     player.on('play', handlePlay);
+    player.on('pause', handlePause);
 
     return () => {
+      reportPlaybackUsage(true);
+      setIsPlaybackActive(false);
       player.off('ended', handleEnded);
       player.off('play', handlePlay);
+      player.off('pause', handlePause);
     };
-  }, [episode, isOpen, shouldShowLegacyWarning]);
+  }, [episode, isOpen, onPlaybackUsageTracked, shouldShowLegacyWarning]);
 
   return (
     <AnimatePresence>

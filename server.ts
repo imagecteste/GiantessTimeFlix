@@ -19,6 +19,7 @@ const SESSION_COOKIE_NAME = 'gtf_session';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 const STATE_TTL_MS = 1000 * 60 * 10;
 const PATREON_SCOPES = ['identity', 'identity.memberships', 'identity[email]'];
+const VIDEO_STORAGE_CACHE_TTL_MS = 1000 * 60 * 10;
 
 const envFileCandidates = ['.env.local', '.env'];
 for (const envFileName of envFileCandidates) {
@@ -49,6 +50,7 @@ interface BunnyVideo {
   description?: string | null;
   guid: string;
   length: number;
+  storageSize?: number | null;
   thumbnailFileName?: string | null;
   title: string;
 }
@@ -64,6 +66,7 @@ interface EpisodeResponse {
   playbackUrl: string;
   publishedAt: string;
   durationInSeconds: number;
+  fileSizeBytes?: number;
   requiresLegacyWarning: boolean;
 }
 
@@ -299,6 +302,13 @@ let cachedPatreonAccessConfig:
       loadedAt: number;
     }
   | null = null;
+const cachedVideoStorageSizes = new Map<
+  string,
+  {
+    bytes: number;
+    loadedAt: number;
+  }
+>();
 
 function buildFrontendRedirectUrl(authStatus: string): string {
   const redirectUrl = new URL(frontendBaseUrl);
@@ -741,10 +751,48 @@ async function fetchCollections(): Promise<BunnyCollection[]> {
 }
 
 async function fetchVideosForCollection(collectionId: string): Promise<BunnyVideo[]> {
-  return fetchAllPages<BunnyVideo>(`/library/${bunnyLibraryId}/videos`, {
+  const collectionVideos = await fetchAllPages<BunnyVideo>(`/library/${bunnyLibraryId}/videos`, {
     collection: collectionId,
     orderBy: 'date',
   });
+
+  return Promise.all(
+    collectionVideos.map(async (video) => ({
+      ...video,
+      storageSize: await fetchVideoStorageSize(video),
+    })),
+  );
+}
+
+async function fetchVideoStorageSize(video: BunnyVideo): Promise<number | undefined> {
+  if (typeof video.storageSize === 'number' && Number.isFinite(video.storageSize) && video.storageSize > 0) {
+    return Math.round(video.storageSize);
+  }
+
+  const cachedStorageSize = cachedVideoStorageSizes.get(video.guid);
+  if (cachedStorageSize && cachedStorageSize.loadedAt + VIDEO_STORAGE_CACHE_TTL_MS > Date.now()) {
+    return cachedStorageSize.bytes;
+  }
+
+  const detailedVideo = await fetchBunnyJson<BunnyVideo>(
+    `/library/${bunnyLibraryId}/videos/${video.guid}`,
+    {},
+  );
+  const normalizedStorageSize = Math.max(
+    0,
+    Math.round(
+      typeof detailedVideo.storageSize === 'number' && Number.isFinite(detailedVideo.storageSize)
+        ? detailedVideo.storageSize
+        : 0,
+    ),
+  );
+
+  cachedVideoStorageSizes.set(video.guid, {
+    bytes: normalizedStorageSize,
+    loadedAt: Date.now(),
+  });
+
+  return normalizedStorageSize > 0 ? normalizedStorageSize : undefined;
 }
 
 function buildSeriesDescription(episodes: EpisodeResponse[], collectionTitle: string): string {
@@ -877,6 +925,10 @@ function mapVideoToEpisode(
     playbackUrl: buildBunnyEmbedUrl(video.guid),
     publishedAt: video.dateUploaded,
     durationInSeconds: video.length,
+    fileSizeBytes:
+      typeof video.storageSize === 'number' && Number.isFinite(video.storageSize) && video.storageSize > 0
+        ? Math.round(video.storageSize)
+        : undefined,
     requiresLegacyWarning: requiresLegacyWarning(video.title),
   };
 }
